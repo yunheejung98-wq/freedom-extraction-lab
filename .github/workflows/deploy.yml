@@ -1,0 +1,42 @@
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ] # 코드를 push하는 브랜치 이름이 master라면 master로 수정하세요.
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm install
+      - run: npm run build
+        env:
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }} # 여기서 GitHub Secrets에 저장한 값을 가져옵니다.
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
