@@ -13,14 +13,17 @@ const MEMORY_PROMPTS = [
   "The last time you breathed without any weight on your shoulders"
 ];
 
-const MetaballsBackground: React.FC = () => {
+// Thermal Energy Visual Background Component (Legacy Code Adapted)
+const ThermalBackground: React.FC<{ themeColor?: { r: number, g: number, b: number } }> = ({ 
+  themeColor = { r: 255, g: 80, b: 30 } 
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouseRef = useRef({ x: 0, y: 0 });
+  const particlesRef = useRef<any[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
     let animationFrameId: number;
@@ -32,122 +35,113 @@ const MetaballsBackground: React.FC = () => {
       height = canvas.height = window.innerHeight;
     };
 
+    // Linear interpolation helper (replacing GSAP for simplicity)
+    const lerp = (start: number, end: number, amt: number) => (1 - amt) * start + amt * end;
+
+    class HeatParticle {
+      x: number;
+      y: number;
+      size: number;
+      initialSize: number;
+      maxSize: number;
+      life: number;
+      decay: number;
+      vx: number;
+      vy: number;
+      color: { r: number, g: number, b: number };
+
+      constructor(x: number, y: number, r: number, g: number, b: number) {
+        this.x = x;
+        this.y = y;
+        this.size = Math.random() * 40 + 20;
+        this.initialSize = this.size;
+        this.maxSize = this.size * 3;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.015 + 0.005;
+        this.color = { r, g, b };
+        this.vx = (Math.random() - 0.5) * 2;
+        this.vy = (Math.random() - 0.5) * 2;
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= this.decay;
+        this.size = lerp(this.initialSize, this.maxSize, 1 - this.life);
+      }
+
+      draw(context: CanvasRenderingContext2D) {
+        const alpha = Math.max(0, this.life);
+        const gradient = context.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size);
+        
+        // Center is hot (white), outer is themed
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+        gradient.addColorStop(0.2, `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha * 0.8})`);
+        gradient.addColorStop(1, `rgba(0, 0, 0, 0)`);
+
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+
     const handleMouseMove = (e: MouseEvent) => {
-      mouseRef.current = { x: e.clientX, y: e.clientY };
+      // Emit multiple particles for rich texture
+      for (let i = 0; i < 2; i++) {
+        particlesRef.current.push(new HeatParticle(
+          e.clientX + (Math.random() - 0.5) * 20,
+          e.clientY + (Math.random() - 0.5) * 20,
+          themeColor.r, themeColor.g, themeColor.b
+        ));
+      }
     };
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('mousemove', handleMouseMove);
 
-    class Ball {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      radius: number;
-      color: string;
-      isMouseBall: boolean = false;
+    const animate = () => {
+      // Overwrite with dark background
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, width, height);
 
-      constructor(color: string, isMouseBall: boolean = false) {
-        this.radius = Math.random() * 80 + 100;
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.vx = (Math.random() - 0.5) * 2;
-        this.vy = (Math.random() - 0.5) * 2;
-        this.color = color;
-        this.isMouseBall = isMouseBall;
-      }
+      // Bloom/Additive blending
+      ctx.globalCompositeOperation = 'screen';
 
-      update() {
-        if (this.isMouseBall) return;
-
-        // Move towards mouse as a 'heat source'
-        const dx = mouseRef.current.x - this.x;
-        const dy = mouseRef.current.y - this.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        // Use a small threshold to avoid division by zero and NaN results
-        if (dist > 1 && dist < 600) {
-          this.vx += (dx / dist) * 0.15;
-          this.vy += (dy / dist) * 0.15;
+      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+        const p = particlesRef.current[i];
+        p.update();
+        p.draw(ctx);
+        if (p.life <= 0) {
+          particlesRef.current.splice(i, 1);
         }
-
-        // Friction
-        this.vx *= 0.98;
-        this.vy *= 0.98;
-
-        this.x += this.vx;
-        this.y += this.vy;
-
-        // Bounce off walls or wrap around
-        if (this.x + this.radius < 0) this.x = width + this.radius;
-        if (this.x - this.radius > width) this.x = -this.radius;
-        if (this.y + this.radius < 0) this.y = height + this.radius;
-        if (this.y - this.radius > height) this.y = -this.radius;
       }
 
-      draw(ctx: CanvasRenderingContext2D) {
-        // Final safety check to ensure values are finite
-        if (!isFinite(this.x) || !isFinite(this.y) || !isFinite(this.radius)) return;
-
-        ctx.beginPath();
-        const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
-        gradient.addColorStop(0, this.color);
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = gradient;
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fill();
+      // Performance cap
+      if (particlesRef.current.length > 500) {
+        particlesRef.current.shift();
       }
-    }
 
-    const balls: Ball[] = [
-      new Ball('rgba(255, 182, 193, 0.9)'), // Light Pink
-      new Ball('rgba(255, 182, 193, 0.7)'),
-      new Ball('rgba(224, 176, 255, 0.9)'), // Light Purple
-      new Ball('rgba(224, 176, 255, 0.7)'),
-      new Ball('rgba(144, 238, 144, 0.9)'), // Light Green
-      new Ball('rgba(144, 238, 144, 0.7)'),
-      // Interaction source ball (mouse following)
-      new Ball('rgba(255, 255, 255, 0.2)', true) 
-    ];
-
-    const render = () => {
-      ctx.clearRect(0, 0, width, height);
-      
-      // Update mouse ball specifically
-      const mouseBall = balls[balls.length - 1];
-      mouseBall.x = mouseRef.current.x;
-      mouseBall.y = mouseRef.current.y;
-      mouseBall.radius = 180;
-
-      balls.forEach((ball) => {
-        ball.update();
-        ball.draw(ctx);
-      });
-
-      animationFrameId = requestAnimationFrame(render);
+      animationFrameId = requestAnimationFrame(animate);
     };
 
-    render();
+    animate();
 
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
       cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [themeColor]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0"
-      style={{
-        // Metaballs effect: blur + high contrast
-        filter: 'blur(40px) contrast(30)',
-        backgroundColor: '#0a0a0a',
-        opacity: 0.4,
-      }}
-    />
+    <div 
+      className="fixed inset-0 z-0 bg-[#050505] pointer-events-none"
+      style={{ filter: 'blur(35px) contrast(1.8)' }}
+    >
+      <canvas ref={canvasRef} className="block w-full h-full" />
+    </div>
   );
 };
 
@@ -157,6 +151,9 @@ const App: React.FC = () => {
   const [memoryInput, setMemoryInput] = useState('');
   const [protocol, setProtocol] = useState<ExtractionProtocol | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Background color theme state
+  const [bgTheme, setBgTheme] = useState({ r: 255, g: 80, b: 30 }); // Default Warm
 
   useEffect(() => {
     setPrompt(MEMORY_PROMPTS[Math.floor(Math.random() * MEMORY_PROMPTS.length)]);
@@ -176,6 +173,16 @@ const App: React.FC = () => {
     try {
       const result = await analyzeMemory(memoryInput);
       setProtocol(result);
+      
+      // Update background theme based on pH result (mapped from legacy logic)
+      if (result.phValue <= 5) { // Acidic/Cold: Blues
+        setBgTheme({ r: 50, g: 100, b: 255 });
+      } else if (result.phValue > 5 && result.phValue < 9) { // Neutral/Stable: Purples
+        setBgTheme({ r: 180, g: 70, b: 255 });
+      } else { // Alkaline/Hot: Reds
+        setBgTheme({ r: 255, g: 80, b: 30 });
+      }
+
       setState('RESULT');
     } catch (err: any) {
       console.error(err);
@@ -188,12 +195,13 @@ const App: React.FC = () => {
     setMemoryInput('');
     setProtocol(null);
     setState('IDLE');
+    setBgTheme({ r: 255, g: 80, b: 30 });
     setPrompt(MEMORY_PROMPTS[Math.floor(Math.random() * MEMORY_PROMPTS.length)]);
   };
 
   return (
     <main className="min-h-screen relative flex flex-col p-6 md:p-12 overflow-y-auto">
-      <MetaballsBackground />
+      <ThermalBackground themeColor={bgTheme} />
 
       <header className="relative z-10 flex justify-between items-center mb-16 border-b border-white/5 pb-6">
         <div>
@@ -202,7 +210,7 @@ const App: React.FC = () => {
         </div>
         <div className="hidden md:block text-right">
           <span className="text-[10px] text-white/60 font-mono tracking-tighter uppercase">Status: </span>
-          <span className="text-[10px] text-blue-400 font-mono tracking-tighter uppercase">System Nominal</span>
+          <span className="text-[10px] text-orange-400 font-mono tracking-tighter uppercase animate-pulse">Thermal Trace Active</span>
         </div>
       </header>
 
@@ -214,8 +222,8 @@ const App: React.FC = () => {
                 Translate <span className="font-bold italic">Freedom</span> into Matter
               </h2>
               <p className="text-white/60 text-lg font-light leading-relaxed">
-                What is the acidity and essence of your liberation?<br/>
-                We analyze the chemical properties of freedom to extract it into a physical solution.
+                What is the thermal signature and essence of your liberation?<br/>
+                Move your mouse to trace the heat of your memories.
               </p>
             </div>
             <button 
@@ -274,9 +282,9 @@ const App: React.FC = () => {
       <footer className="relative z-10 mt-16 flex flex-col md:flex-row justify-between items-center text-[10px] text-white/20 tracking-widest uppercase border-t border-white/5 pt-8">
         <div>© 2024 Freedom Extraction Project</div>
         <div className="mt-4 md:mt-0 space-x-6">
-          <span>Liberation Index</span>
+          <span>Thermal Mapping</span>
           <span>Chemical Protocol</span>
-          <span>Neural Mapping</span>
+          <span>Neural Trace</span>
         </div>
       </footer>
     </main>
