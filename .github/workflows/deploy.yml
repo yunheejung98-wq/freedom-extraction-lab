@@ -1,9 +1,8 @@
-
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ "main" ] # 코드를 push하는 브랜치 이름이 master라면 master로 수정하세요.
+    branches: [ "main" ]
 
 permissions:
   contents: read
@@ -18,11 +17,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
       - run: npm install
       - run: npm run build
         env:
-          VITE_API_KEY: ${{ secrets.VITE_API_KEY }} # 여기서 GitHub Secrets에 저장한 값을 가져옵니다.
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
